@@ -10,7 +10,6 @@ st.set_page_config(page_title="Calculateur de Chargement", layout="wide")
 
 # --- 🗄️ BASE DE DONNÉES INTÉGRÉE ---
 CSV_DATA = """CTT Magasin;Longueur Ext (mm);Largeur Ext (mm);Hauteur Ext (mm)
-'Rack EB2L';'2250';'1500';'920'
 '03VER';'1050';'800';'2800'
 '04';'900';'555';'600'
 '048G1';'3600';'1180';'1560'
@@ -486,6 +485,7 @@ CSV_DATA = """CTT Magasin;Longueur Ext (mm);Largeur Ext (mm);Hauteur Ext (mm)
 'R12L3';'1200';'840';'1210'
 'R12L4';'1200';'630';'1210'
 'R12L6';'1200';'420';'1210'
+'Rack EB2L';'2250';'1500';'920'
 'RG';'0';'0';'0'
 'RH4L6';'1200';'420';'425'
 'RH6L2';'1200';'1260';'645'
@@ -737,6 +737,39 @@ div[data-testid="stElementContainer"]:has(#conteneurs-header) + div div[data-tes
 </style>
 """, unsafe_allow_html=True)
 
+# --- LOGO & TITRE PERSONNALISÉ (EN-TÊTE HERO) ---
+LOGO_SVG = """<svg width="90" height="90" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="64" height="64" rx="14" fill="url(#grad_bg)"/>
+<rect x="10" y="22" width="32" height="24" rx="2" fill="white" fill-opacity="0.25"/>
+<path d="M44 28H52L56 34V46H44V28Z" fill="white"/>
+<rect x="13" y="25" width="14" height="18" rx="2" fill="#ff9800"/>
+<rect x="29" y="33" width="10" height="10" rx="2" fill="#4caf50"/>
+<rect x="29" y="25" width="10" height="6" rx="2" fill="#ffcc80"/>
+<circle cx="18" cy="46" r="4.5" fill="white"/>
+<circle cx="18" cy="46" r="2" fill="#0288d1"/>
+<circle cx="34" cy="46" r="4.5" fill="white"/>
+<circle cx="34" cy="46" r="2" fill="#0288d1"/>
+<circle cx="50" cy="46" r="4.5" fill="white"/>
+<circle cx="50" cy="46" r="2" fill="#0288d1"/>
+<defs>
+<linearGradient id="grad_bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0288d1"/>
+<stop offset="1" stop-color="#1565c0"/>
+</linearGradient>
+</defs>
+</svg>"""
+
+st.markdown(f"""
+<div style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: 2rem 0; margin-bottom: 2rem; background: linear-gradient(180deg, rgba(245,247,250,0) 0%, rgba(227,235,243,0.3) 100%); border-radius: 0 0 30px 30px;">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+        {LOGO_SVG}
+        <h1 style="margin: 0; padding: 0; background: -webkit-linear-gradient(135deg, #0288d1, #2e7d32); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 3.2em; font-weight: 900; letter-spacing: -1px; line-height: 1.2;">
+            Calculateur de Chargement
+        </h1>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 
 # --- AIDE MÉMOIRE SVG ANIMÉ (BARRE LATÉRALE) ---
 st.sidebar.markdown("""
@@ -822,42 +855,9 @@ if afficher_manuel:
     """)
     st.stop() # Arrête l'exécution ici pour masquer le calculateur en dessous
 
-# --- FIN DU MENU MANUEL ---
-
-# --- LOGO & TITRE PERSONNALISÉ ---
-LOGO_SVG = """<svg width="60" height="60" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="64" height="64" rx="14" fill="url(#grad_bg)"/>
-<rect x="10" y="22" width="32" height="24" rx="2" fill="white" fill-opacity="0.25"/>
-<path d="M44 28H52L56 34V46H44V28Z" fill="white"/>
-<rect x="13" y="25" width="14" height="18" rx="2" fill="#ff9800"/>
-<rect x="29" y="33" width="10" height="10" rx="2" fill="#4caf50"/>
-<rect x="29" y="25" width="10" height="6" rx="2" fill="#ffcc80"/>
-<circle cx="18" cy="46" r="4.5" fill="white"/>
-<circle cx="18" cy="46" r="2" fill="#0288d1"/>
-<circle cx="34" cy="46" r="4.5" fill="white"/>
-<circle cx="34" cy="46" r="2" fill="#0288d1"/>
-<circle cx="50" cy="46" r="4.5" fill="white"/>
-<circle cx="50" cy="46" r="2" fill="#0288d1"/>
-<defs>
-<linearGradient id="grad_bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-<stop stop-color="#0288d1"/>
-<stop offset="1" stop-color="#1565c0"/>
-</linearGradient>
-</defs>
-</svg>"""
-
-st.markdown(f"""
-<div style="display: flex; align-items: center; gap: 15px; margin-top: 10px; margin-bottom: 10px;">
-{LOGO_SVG}
-<h1 style="margin: 0; padding: 0; background: -webkit-linear-gradient(135deg, #0288d1, #4caf50); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.4em; line-height: 1.2;">Calculateur d'Optimisation de Chargement</h1>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("Réservez de la place pour plusieurs types de conteneurs, et découvrez combien de charges principales peuvent rentrer dans l'espace restant.")
-
 # --- INITIALISATION ÉTAT ---
 if 'nb_conteneurs' not in st.session_state:
     st.session_state.nb_conteneurs = 1
-
 
 # --- BARRE LATÉRALE : ENTRÉES UTILISATEUR CLOISONNÉES ---
 
@@ -879,7 +879,7 @@ with st.sidebar.container(border=True):
         <h4 style='margin:0; color: white; text-align:center;'>📦 Charges Principales</h4>
     </div>
     """, unsafe_allow_html=True)
-    mode_calcul = st.radio("Mode de remplissage :", ["Automatique (Remplir l'espace)", "Manuel (Quantité exacte)"], index=1)
+    mode_calcul = st.radio("Mode de remplissage :", ["Automatique (Remplir l'espace)", "Manuel (Quantité exacte)"], index=0)
 
     if mode_calcul == "Manuel (Quantité exacte)":
         qte_principale_demandee = st.number_input("Nombre exact de charges à placer", min_value=0, value=34, step=1)
@@ -923,7 +923,7 @@ with st.sidebar.container(border=True):
     </div>
     <div id='conteneurs-header'></div>
     """, unsafe_allow_html=True)
-    inclure_conteneurs = st.checkbox("J'ai des conteneurs spécifiques à charger absolument", value=True)
+    inclure_conteneurs = st.checkbox("J'ai des conteneurs spécifiques à charger absolument", value=False)
     conteneurs_data = []
 
     if inclure_conteneurs:
@@ -1037,7 +1037,7 @@ if inclure_conteneurs:
                 conteneurs_places.append({
                     "l_amp": l_amp, "rangees": c_rangees, "largeur": c_largeur,
                     "dim_x": c_dim_x, "dim_y": c_dim_y, "couches": c_couches,
-                    "qte_exacte": cont["qte_exacte"], "h": cont["h"], "color": cont["color"]
+                    "qte_sol": places_sol, "h": cont["h"], "color": cont["color"], "qte_exacte": cont["qte_exacte"]
                 })
                 longueur_amputee_totale += l_amp
 

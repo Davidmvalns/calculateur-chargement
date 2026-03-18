@@ -4,6 +4,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import io
+import urllib.parse
+import json
+import os
 
 # Configuration de la page Streamlit
 st.set_page_config(page_title="Calculateur de Chargement", layout="wide")
@@ -430,6 +433,7 @@ CSV_DATA = """CTT Magasin;Longueur Ext (mm);Largeur Ext (mm);Hauteur Ext (mm)
 'M30L6';'575';'400';'3000'
 'MD200';'600';'400';'200'
 'MD500';'600';'500';'400'
+'Mirafiori opel';'1200';'1000';'620'
 'NH6L2';'575';'1350';'645'
 'NH6L3';'575';'900';'645'
 'NH8L1';'575';'2700';'800'
@@ -663,6 +667,27 @@ if df_db is not None and 'CTT Magasin' in df_db.columns and not df_db.empty:
     liste_contenants = df_db['CTT Magasin'].dropna().astype(str).str.strip().tolist()
     liste_contenants = [c for c in liste_contenants if c and c.lower() != "nan"]
 
+# --- GESTION DE LA SAUVEGARDE LOCALE ---
+import json
+import os
+
+CONFIG_FILE = "config_app.json"
+
+if 'config_loaded' not in st.session_state:
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                st.session_state.saved_config = json.load(f)
+        except:
+            st.session_state.saved_config = {}
+    else:
+        st.session_state.saved_config = {}
+    
+    st.session_state.config_loaded = True
+    st.session_state.nb_conteneurs = st.session_state.saved_config.get("nb_conteneurs", 1)
+
+cfg = st.session_state.saved_config
+
 # --- INJECTION CSS GLOBALE POUR UN DESIGN FUN ET LISIBLE ---
 st.markdown("""
 <style>
@@ -733,6 +758,38 @@ div[data-testid="stElementContainer"]:has(#conteneurs-header) + div div[data-tes
 .stButton > button:hover {
     transform: scale(1.05);
     box-shadow: 0 6px 10px rgba(0,0,0,0.3) !important;
+}
+
+/* Bouton d'export */
+div[data-testid="stDownloadButton"] > button {
+    background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%) !important;
+    width: 100%;
+    font-size: 1.1em !important;
+    padding: 10px !important;
+    border-radius: 10px !important;
+}
+
+/* =========================================================
+   STYLE D'IMPRESSION (PDF)
+   Cache la barre de menu, les boutons et les champs de saisie,
+   ne garde QUE le schéma visuel et les textes pour le PDF.
+========================================================= */
+@media print {
+    /* Cacher le menu latéral */
+    [data-testid="stSidebar"] { display: none !important; }
+    /* Cacher l'en-tête Streamlit (les trois petits points) */
+    header { display: none !important; }
+    /* Ajuster la largeur de la zone principale */
+    .block-container { max-width: 100% !important; padding: 0 !important; }
+    /* Cacher les boutons de l'application et iframes */
+    .stButton, .btn-export, iframe { display: none !important; }
+    /* Cacher les expanders fermés (Option 2) */
+    [data-testid="stExpander"] { display: none !important; }
+    /* Forcer l'affichage correct des couleurs de fond (schémas/alertes) */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -847,17 +904,14 @@ if afficher_manuel:
 
     ### 🟩 ÉTAPE 4 : Les Conteneurs Secondaires (Bloc Vert) - *Optionnel*
     Si vous devez expédier des conteneurs spécifiques en plus, cochez la case *"J'ai des conteneurs spécifiques..."*.
-    * Comme pour les charges principales, tapez simplement le nom du contenant pour retrouver ses mesures !
+    * Renseignez leurs quantités et dimensions.
 
     ---
     ## 3. Comprendre les Résultats (Panneau de Droite)
-    L'application calcule automatiquement les deux orientations possibles et **vous affiche directement la plus performante**.
+    L'application calcule automatiquement les deux orientations possibles et **vous affiche directement la plus performante**. Un bilan s'affiche pour vous indiquer le nombre de camions nécessaires si vous dépassez la capacité !
     """)
     st.stop() # Arrête l'exécution ici pour masquer le calculateur en dessous
 
-# --- INITIALISATION ÉTAT ---
-if 'nb_conteneurs' not in st.session_state:
-    st.session_state.nb_conteneurs = 1
 
 # --- BARRE LATÉRALE : ENTRÉES UTILISATEUR CLOISONNÉES ---
 
@@ -868,9 +922,9 @@ with st.sidebar.container(border=True):
         <h4 style='margin:0; color: white; text-align:center;'>📏 Dimensions du Camion</h4>
     </div>
     """, unsafe_allow_html=True)
-    camion_L = st.number_input("Longueur du plancher (m)", min_value=1.0, value=13.5, step=0.1)
-    camion_l = st.number_input("Largeur du plancher (m)", min_value=1.0, value=2.4, step=0.1)
-    camion_h = st.number_input("Hauteur utile max (m)", min_value=1.0, value=2.7, step=0.1)
+    camion_L = st.number_input("Longueur du plancher (m)", min_value=1.0, value=float(cfg.get("camion_L", 13.5)), step=0.1)
+    camion_l = st.number_input("Largeur du plancher (m)", min_value=1.0, value=float(cfg.get("camion_l", 2.4)), step=0.1)
+    camion_h = st.number_input("Hauteur utile max (m)", min_value=1.0, value=float(cfg.get("camion_h", 2.7)), step=0.1)
 
 # BLOC 2 : CHARGES PRINCIPALES (Orange)
 with st.sidebar.container(border=True):
@@ -879,22 +933,32 @@ with st.sidebar.container(border=True):
         <h4 style='margin:0; color: white; text-align:center;'>📦 Charges Principales</h4>
     </div>
     """, unsafe_allow_html=True)
-    mode_calcul = st.radio("Mode de remplissage :", ["Automatique (Remplir l'espace)", "Manuel (Quantité exacte)"], index=0)
+    def_mode_calcul = cfg.get("mode_calcul", "Automatique (Remplir l'espace)")
+    idx_mode = 0 if def_mode_calcul == "Automatique (Remplir l'espace)" else 1
+    mode_calcul = st.radio("Mode de remplissage :", ["Automatique (Remplir l'espace)", "Manuel (Quantité exacte)"], index=idx_mode)
 
     if mode_calcul == "Manuel (Quantité exacte)":
-        qte_principale_demandee = st.number_input("Nombre exact de charges à placer", min_value=0, value=34, step=1)
+        saved_qte = int(cfg.get("qte_principale_demandee", 34))
+        safe_qte = saved_qte if saved_qte >= 0 else 34
+        qte_principale_demandee = st.number_input("Nombre exact de charges à placer", min_value=0, value=safe_qte, step=1)
     else:
         qte_principale_demandee = -1
 
     # Recherche sécurisée via Base de données
     if len(liste_contenants) > 0:
-        source_princ = st.radio("Saisie des dimensions :", ["Depuis la base", "Manuelle"], key="src_princ", horizontal=True, index=0)
+        def_source_princ = cfg.get("source_princ", "Depuis la base")
+        idx_src_princ = 0 if def_source_princ == "Depuis la base" else 1
+        source_princ = st.radio("Saisie des dimensions :", ["Depuis la base", "Manuelle"], key="src_princ", horizontal=True, index=idx_src_princ)
     else:
         source_princ = "Manuelle"
         st.warning("⚠️ Impossible de lire les contenants de la base de données. Format CSV invalide.")
 
+    nom_charge = None
     if source_princ == "Depuis la base":
-        idx_defaut_princ = liste_contenants.index('PF08') if 'PF08' in liste_contenants else 0
+        def_nom_charge = cfg.get("nom_charge", "PF08")
+        if def_nom_charge not in liste_contenants:
+            def_nom_charge = 'PF08' if 'PF08' in liste_contenants else liste_contenants[0]
+        idx_defaut_princ = liste_contenants.index(def_nom_charge)
         nom_charge = st.selectbox("Rechercher le contenant :", liste_contenants, index=idx_defaut_princ, key="sel_princ")
         
         row_princ = df_db[df_db['CTT Magasin'].astype(str).str.strip() == nom_charge]
@@ -908,12 +972,12 @@ with st.sidebar.container(border=True):
             st.error("Erreur de récupération.")
             charge_L, charge_l, charge_h = 1.0, 1.2, 0.62
     else:
-        charge_L = st.number_input("Longueur de la charge (m)", min_value=0.01, value=1.00, step=0.01)
-        charge_l = st.number_input("Largeur de la charge (m)", min_value=0.01, value=1.20, step=0.01)
-        charge_h = st.number_input("Hauteur de la charge (m)", min_value=0.01, value=0.62, step=0.01)
+        charge_L = st.number_input("Longueur de la charge (m)", min_value=0.01, value=float(cfg.get("charge_L", 1.00)), step=0.01)
+        charge_l = st.number_input("Largeur de la charge (m)", min_value=0.01, value=float(cfg.get("charge_l", 1.20)), step=0.01)
+        charge_h = st.number_input("Hauteur de la charge (m)", min_value=0.01, value=float(cfg.get("charge_h", 0.62)), step=0.01)
 
     st.markdown('<div style="margin-top: 10px; margin-bottom: 5px;"><strong>⚙️ Contraintes</strong></div>', unsafe_allow_html=True)
-    gerbage_autorise = st.number_input("Gerbage max (Combien de charges empilées max ?)", min_value=1, value=3, step=1)
+    gerbage_autorise = st.number_input("Gerbage max (Combien de charges empilées max ?)", min_value=1, value=int(cfg.get("gerbage_autorise", 3)), step=1)
 
 # BLOC 3 : CONTENEURS (Vert) DYNAMIQUE
 with st.sidebar.container(border=True):
@@ -923,31 +987,40 @@ with st.sidebar.container(border=True):
     </div>
     <div id='conteneurs-header'></div>
     """, unsafe_allow_html=True)
-    inclure_conteneurs = st.checkbox("J'ai des conteneurs spécifiques à charger absolument", value=False)
+    inclure_conteneurs = st.checkbox("J'ai des conteneurs spécifiques à charger absolument", value=bool(cfg.get("inclure_conteneurs", False)))
     conteneurs_data = []
+    raw_cont_data = []
 
     if inclure_conteneurs:
         couleurs_vert = ["#4caf50", "#43a047", "#388e3c", "#2e7d32", "#1b5e20"]
         dynamic_css = "<style>\n"
         
+        saved_conts = cfg.get("conteneurs_list", [])
+
         for i in range(st.session_state.nb_conteneurs):
+            saved_c = saved_conts[i] if i < len(saved_conts) else {}
             color = couleurs_vert[i % len(couleurs_vert)]
             
             # Création d'une "sous-carte" bien cloisonnée pour chaque type
             with st.container(border=True):
                 st.markdown(f"<div id='marker-type-{i}'></div><b style='color: {color}; font-size: 1.1em;'>📦 Type {i+1}</b><hr style='margin: 5px 0; border: 1px dashed {color};'>", unsafe_allow_html=True)
                 
-                default_qte = 0
-                cont_qte = st.number_input(f"Nombre de conteneurs", min_value=0, value=default_qte, step=1, key=f"qte_{i}")
+                cont_qte = st.number_input(f"Nombre de conteneurs", min_value=0, value=int(saved_c.get("qte_exacte", 0)), step=1, key=f"qte_{i}")
                 
                 # Choix Manuel vs Base de données pour ce conteneur
                 if len(liste_contenants) > 0:
-                    source_sec = st.radio("Saisie des dimensions :", ["Depuis la base", "Manuelle"], key=f"src_sec_{i}", horizontal=True, label_visibility="collapsed", index=0)
+                    def_src_sec = saved_c.get("source_sec", "Depuis la base")
+                    idx_src_sec = 0 if def_src_sec == "Depuis la base" else 1
+                    source_sec = st.radio("Saisie des dimensions :", ["Depuis la base", "Manuelle"], key=f"src_sec_{i}", horizontal=True, label_visibility="collapsed", index=idx_src_sec)
                 else:
                     source_sec = "Manuelle"
 
+                nom_cont = None
                 if source_sec == "Depuis la base":
-                    idx_defaut_sec = liste_contenants.index('VC52') if 'VC52' in liste_contenants else 0
+                    def_nom_cont = saved_c.get("nom_cont", "VC52")
+                    if def_nom_cont not in liste_contenants:
+                        def_nom_cont = 'VC52' if 'VC52' in liste_contenants else liste_contenants[0]
+                    idx_defaut_sec = liste_contenants.index(def_nom_cont)
                     nom_cont = st.selectbox(f"Rechercher le contenant {i+1} :", liste_contenants, index=idx_defaut_sec, key=f"sel_sec_{i}")
                     
                     row_sec = df_db[df_db['CTT Magasin'].astype(str).str.strip() == nom_cont]
@@ -961,15 +1034,25 @@ with st.sidebar.container(border=True):
                         cont_L, cont_l, cont_h = 2.25, 1.50, 0.92
                 else:
                     col_L, col_l = st.columns(2)
-                    with col_L: cont_L = st.number_input("Long. (m)", min_value=0.01, value=2.25, step=0.01, key=f"L_{i}")
-                    with col_l: cont_l = st.number_input("Larg. (m)", min_value=0.01, value=1.50, step=0.01, key=f"l_{i}")
-                    cont_h = st.number_input("Hauteur (m)", min_value=0.01, value=0.92, step=0.01, key=f"h_{i}")
+                    with col_L: cont_L = st.number_input("Long. (m)", min_value=0.01, value=float(saved_c.get("L", 2.25)), step=0.01, key=f"L_{i}")
+                    with col_l: cont_l = st.number_input("Larg. (m)", min_value=0.01, value=float(saved_c.get("l", 1.50)), step=0.01, key=f"l_{i}")
+                    cont_h = st.number_input("Hauteur (m)", min_value=0.01, value=float(saved_c.get("h", 0.92)), step=0.01, key=f"h_{i}")
 
-                cont_gerbage = st.number_input(f"Gerbage max de ce contenant", min_value=1, value=2, step=1, key=f"gerb_{i}")
+                cont_gerbage = st.number_input(f"Gerbage max de ce contenant", min_value=1, value=int(saved_c.get("gerbage", 2)), step=1, key=f"gerb_{i}")
                 
                 conteneurs_data.append({
                     "qte_exacte": cont_qte, "L": cont_L, "l": cont_l, "h": cont_h, "gerbage": cont_gerbage,
                     "color": color
+                })
+
+                raw_cont_data.append({
+                    "qte_exacte": cont_qte,
+                    "source_sec": source_sec,
+                    "nom_cont": nom_cont if source_sec == "Depuis la base" else None,
+                    "L": cont_L if source_sec == "Manuelle" else 2.25,
+                    "l": cont_l if source_sec == "Manuelle" else 1.50,
+                    "h": cont_h if source_sec == "Manuelle" else 0.92,
+                    "gerbage": cont_gerbage
                 })
                 
             # Teinter légèrement les sous-blocs avec effet semi-transparent sur fond blanc
@@ -993,6 +1076,34 @@ with st.sidebar.container(border=True):
             if col2.button("➖ Retirer type"):
                 st.session_state.nb_conteneurs -= 1
                 st.rerun()
+
+# --- BOUTON DE SAUVEGARDE ---
+st.sidebar.markdown("---")
+if st.sidebar.button("💾 Sauvegarder ma configuration par défaut"):
+    config_to_save = {
+        "camion_L": camion_L,
+        "camion_l": camion_l,
+        "camion_h": camion_h,
+        "mode_calcul": mode_calcul,
+        "qte_principale_demandee": qte_principale_demandee,
+        "source_princ": source_princ,
+        "nom_charge": nom_charge if source_princ == "Depuis la base" else None,
+        "charge_L": charge_L if source_princ == "Manuelle" else 1.0,
+        "charge_l": charge_l if source_princ == "Manuelle" else 1.2,
+        "charge_h": charge_h if source_princ == "Manuelle" else 0.62,
+        "gerbage_autorise": gerbage_autorise,
+        "inclure_conteneurs": inclure_conteneurs,
+        "nb_conteneurs": st.session_state.nb_conteneurs,
+        "conteneurs_list": raw_cont_data if inclure_conteneurs else []
+    }
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config_to_save, f)
+        st.session_state.saved_config = config_to_save
+        st.sidebar.success("Configuration sauvegardée ! Elle sera rechargée au prochain lancement.")
+    except Exception as e:
+        st.sidebar.error("Erreur lors de la sauvegarde du fichier.")
+
 
 # --- 1. CALCUL DE L'ESPACE PRIS PAR LES CONTENEURS FIXES ---
 longueur_amputee_totale = 0
@@ -1217,19 +1328,26 @@ def dessiner_chargement_complet(qte_totale, couches, rangees, largeur, dim_x, di
 # --- AFFICHAGE DES RÉSULTATS ---
 st.header("📊 Résultats de l'optimisation")
 
+# Variable pour traquer la nécessité de déclencher l'alerte visuelle rouge globale
+alerte_globale = False
+
+# 1. Vérification du débordement des conteneurs
 if erreur_conteneurs or longueur_amputee_totale > camion_L:
+    alerte_globale = True
     st.error(f"⚠️ Impossible ! L'ensemble des conteneurs prend plus de place que le camion (ou ne rentre pas en hauteur).")
 else:
-    # --- ALERTE PLAFOND (CHARGES PRINCIPALES) ---
+    # --- 2. Vérification des alertes de Plafond (Charges Principales) ---
     if couches_possibles_hauteur < gerbage_autorise and charge_h > 0:
-        st.warning(f"⚠️ **Plafond atteint (Charges Principales) :** Vous avez autorisé un gerbage de {gerbage_autorise}, mais la hauteur du camion ({camion_h}m) limite physiquement l'empilement à **{couches_reelles} couches** (de {charge_h}m de haut).")
+        alerte_globale = True
+        st.warning(f"⚠️ **Plafond atteint (Charges Principales) :** Vous avez autorisé un gerbage de {gerbage_autorise}, mais la hauteur du camion ({camion_h}m) limite physiquement l'empilement à **{couches_reelles} couches**.")
 
-    # --- ALERTE PLAFOND (CONTENEURS) ---
+    # --- 3. Vérification des alertes de Plafond (Conteneurs Secondaires) ---
     if inclure_conteneurs:
         for i, cont in enumerate(conteneurs_data):
             if cont["qte_exacte"] > 0 and cont["h"] > 0:
                 c_pos = math.floor(camion_h / cont["h"])
                 if c_pos < cont["gerbage"] and c_pos > 0:
+                    alerte_globale = True
                     st.warning(f"⚠️ **Plafond atteint (Conteneurs Type {i+1}) :** Vous avez autorisé un gerbage de {cont['gerbage']}, mais la hauteur du camion limite l'empilement à **{c_pos} couches**.")
 
     if inclure_conteneurs:
@@ -1247,11 +1365,13 @@ else:
         best_qte, best_rangees, best_largeur, best_dim_L, best_dim_l, best_err = qte_opt2, rangees2, largeur2, charge_l, charge_L, erreur_manuelle_opt2
         alt_qte, alt_rangees, alt_largeur, alt_dim_L, alt_dim_l, alt_err = qte_opt1, rangees1, largeur1, charge_L, charge_l, erreur_manuelle_opt1
 
+    # --- 4. Vérification d'espace insuffisant pour le mode Manuel ---
+    if best_err:
+        alerte_globale = True
+        st.warning(f"⚠️ **Espace insuffisant :** Le camion est trop petit pour placer vos {qte_principale_demandee} charges demandées. Le maximum possible a été affiché.")
+
     # --- AFFICHAGE DE LA MEILLEURE OPTION ---
     st.subheader(f"🌟 Orientation Recommandée (Option {best_opt})")
-    
-    if best_err:
-        st.warning(f"⚠️ L'espace restant est insuffisant pour placer vos {qte_principale_demandee} charges. Le maximum possible a été affiché.")
         
     st.metric(label="Total de charges principales", value=f"{best_qte} charges")
     if best_qte > 0:
@@ -1278,3 +1398,36 @@ else:
             
         fig_alt = dessiner_chargement_complet(alt_qte, couches_reelles, alt_rangees, alt_largeur, alt_dim_L, alt_dim_l, charge_h)
         st.plotly_chart(fig_alt, use_container_width=True, key="chart_alt")
+
+# --- INJECTION DE L'ANIMATION GLOBALE (SI ALERTE DÉCLENCHÉE) ---
+if alerte_globale:
+    st.markdown("""
+    <div id="overlay-rouge-clignotant"></div>
+    <style>
+    /* 1. L'overlay global rouge translucide */
+    #overlay-rouge-clignotant {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        pointer-events: none; /* Très important : permet de cliquer à travers l'alerte ! */
+        z-index: 999999;
+        animation: ecran-rouge 1.5s infinite;
+    }
+    @keyframes ecran-rouge {
+        0%, 100% { background-color: rgba(255, 0, 0, 0); }
+        50% { background-color: rgba(255, 0, 0, 0.15); } /* Rouge translucide */
+    }
+    
+    /* 2. Effet de pulsation sur TOUS les messages d'alerte (jaunes et rouges) */
+    div[data-testid="stAlert"] {
+        animation: pulse-alert 1.5s infinite !important;
+        border-left: 6px solid red !important;
+    }
+    @keyframes pulse-alert {
+        0%, 100% { transform: scale(1); box-shadow: none; }
+        50% { transform: scale(1.02); box-shadow: 0 0 20px rgba(255, 0, 0, 0.4); }
+    }
+    </style>
+    """, unsafe_allow_html=True)
